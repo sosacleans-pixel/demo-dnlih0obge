@@ -43,14 +43,23 @@
   const starTxt = (n) => n + ' ' + (n === 1 ? t('star') : t('starsWord'));
 
   /* ---------- storage ---------- */
-  function blank(lang) { return { v: 1, lang: lang || 'en', family: null, kids: [], moves: [], chores: [], rewards: [], log: [], redemptions: [] }; }
+  function blank(lang) { return { v: 1, ex: 1, lang: lang || 'en', family: null, kids: [], moves: [], chores: [], rewards: [], log: [], redemptions: [] }; }
   function load() {
     try {
       const r = localStorage.getItem(KEY);
-      if (r) { const s = JSON.parse(r); if (s && s.v === 1) return s; }
+      if (r) { const s = JSON.parse(r); if (s && s.v === 1) return migrate(s); }
     } catch (e) { /* ignore */ }
     const nl = (navigator.language || 'en').slice(0, 2).toLowerCase() === 'es' ? 'es' : 'en';
     return blank(nl);
+  }
+  // Older saves: moves earned stars right away. Now moves wait for a grown-up like chores, with new star values and an allowance reward.
+  function migrate(s) {
+    if (s.ex === 1) return s;
+    (s.moves || []).forEach((m) => { const d = D.moves.find((x) => x.id === m.id); if (d) m.stars = d.stars; });
+    if (s.family && s.rewards && !s.rewards.some((r) => r.id === 'allowance')) s.rewards.unshift(JSON.parse(JSON.stringify(D.rewards.find((r) => r.id === 'allowance'))));
+    s.ex = 1;
+    try { localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) { /* ignore */ }
+    return s;
   }
   function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* storage full or blocked */ } }
   function initContent(pin) {
@@ -60,8 +69,8 @@
     S.rewards = clone(D.rewards);
     S.log = []; S.redemptions = [];
   }
-  function addLog(kid, type, item, date, status, stars, secs) {
-    S.log.push({ id: uid(), kid, type, item, date, status, stars, secs: secs || 0, ts: Date.now() });
+  function addLog(kid, type, item, date, status, stars, secs, ts) {
+    S.log.push({ id: uid(), kid, type, item, date, status, stars, secs: secs || 0, ts: ts || Date.now() });
   }
   function seedDemo() {
     const lang = S.lang;
@@ -77,13 +86,13 @@
       k2: [[1, ['arms', 'jacks', 'freeze'], ['laundry', 'bed', 'recycle']], [2, ['flamingo'], ['table']], [5, ['march', 'crab'], ['clothes', 'pet']], [6, ['star'], ['bed']]]
     };
     Object.keys(plan).forEach((kid) => plan[kid].forEach(([n, ms, cs]) => {
-      const date = dkey(daysAgo(n));
-      ms.forEach((m) => { const mv = moveById(m); addLog(kid, 'move', m, date, 'approved', mv.stars, mv.secs); });
-      cs.forEach((c) => addLog(kid, 'chore', c, date, 'approved', choreById(c).stars));
+      const date = dkey(daysAgo(n)); let ts = daysAgo(n).getTime() - 3 * 3600000;
+      ms.forEach((m) => { const mv = moveById(m); addLog(kid, 'move', m, date, 'approved', mv.stars, mv.secs, ts += 600000); });
+      cs.forEach((c) => addLog(kid, 'chore', c, date, 'approved', choreById(c).stars, 0, ts += 600000));
     }));
     const today = dkey();
-    addLog('k1', 'move', 'jacks', today, 'approved', 1, 30);
-    addLog('k2', 'move', 'march', today, 'approved', 1, 45);
+    addLog('k1', 'move', 'jacks', today, 'pending', moveById('jacks').stars, 30);
+    addLog('k2', 'move', 'march', today, 'approved', moveById('march').stars, 45);
     addLog('k2', 'chore', 'bed', today, 'pending', 2);
     S.redemptions.push({ id: uid(), kid: 'k2', reward: 'game', cost: 8, status: 'approved', ts: daysAgo(3).getTime() });
     save();
@@ -97,6 +106,9 @@
   const todayLog = (kid, type, item) => S.log.find((e) => e.kid === kid && e.type === type && e.item === item && e.date === dkey());
   const choreStatus = (kid, cid) => { const e = todayLog(kid, 'chore', cid); return e ? e.status : null; };
   const moveDoneToday = (kid, mid) => !!todayLog(kid, 'move', mid);
+  const moveStatus = (kid, mid) => { const e = todayLog(kid, 'move', mid); return e ? e.status : null; };
+  const earnTxt = (n) => (n === 1 ? t('earnStar1') : t('earnStars', { n }));
+  const kindTag = (type) => type === 'move' ? '<span class="tag tag-move">🏃 ' + t('exerciseReq') + '</span>' : type === 'chore' ? '<span class="tag tag-chore">🧹 ' + t('choreReq') + '</span>' : '<span class="tag tag-reward">🎁 ' + t('rewardReq') + '</span>';
   const sum = (arr, f) => arr.reduce((a, x) => a + f(x), 0);
   const earned = (kid) => sum(S.log.filter((e) => e.kid === kid && e.status === 'approved'), (e) => e.stars);
   const spent = (kid) => sum(S.redemptions.filter((r) => r.kid === kid && r.status === 'approved'), (r) => r.cost);
@@ -145,11 +157,12 @@
       '<a href="' + h + '" class="tab' + (active === k ? ' on' : '') + '"' + (active === k ? ' aria-current="page"' : '') + '><span class="tab-ic" aria-hidden="true">' + ic + '</span><span class="tab-lbl">' + t(k) + '</span></a>').join('') + '</nav>';
   }
   function moveCard(kid, m) {
-    const done = moveDoneToday(kid, m.id);
-    return '<a class="item move-card' + (done ? ' is-done' : '') + '" href="#/kid/' + kid + '/move/' + m.id + '">' +
+    const st = moveStatus(kid, m.id); const done = !!st;
+    return '<a class="item move-card' + (done ? ' is-done' : '') + (st ? ' is-' + st : '') + '" data-move="' + m.id + '" href="#/kid/' + kid + '/move/' + m.id + '">' +
       '<span class="item-ic ic-move" aria-hidden="true">' + m.icon + '</span>' +
-      '<span class="item-body"><span class="tag tag-move">🏃 ' + t('move') + '</span><span class="item-title">' + esc(L(m.name)) + '</span>' +
-      '<span class="item-meta"><span>⏱️ ' + t('secs', { n: m.secs }) + '</span><span>⭐ ' + m.stars + '</span></span></span>' +
+      '<span class="item-body"><span class="tag tag-move">🏃 ' + t('exerciseReq') + '</span><span class="item-title">' + esc(L(m.name)) + '</span>' +
+      '<span class="item-meta"><span>⏱️ ' + t('secs', { n: m.secs }) + '</span><span class="pts" data-testid="move-pts">⭐ ' + earnTxt(m.stars) + '</span></span>' +
+      (st === 'pending' ? '<span class="status status-wait">⏳ ' + t('waiting') + '</span>' : st === 'approved' ? '<span class="status status-ok">✅ ' + t('doneToday') + '</span>' : '') + '</span>' +
       '<span class="item-cta" aria-hidden="true">' + (done ? '✅' : '▶') + '</span>' +
       (done ? '<span class="sr-only">' + t('doneToday') + '</span>' : '') + '</a>';
   }
@@ -162,7 +175,7 @@
     return '<div class="item chore-card' + (st ? ' is-' + st : '') + '" data-chore="' + c.id + '">' +
       '<span class="item-ic ic-chore" aria-hidden="true">' + esc(c.icon) + '</span>' +
       '<span class="item-body"><span class="tag tag-chore">🧹 ' + t('chores') + '</span><span class="item-title">' + esc(L(c.name)) + '</span>' +
-      '<span class="item-meta"><span>⭐ ' + c.stars + '</span></span>' + action + '</span></div>';
+      '<span class="item-meta"><span class="pts">⭐ ' + earnTxt(c.stars) + '</span></span>' + action + '</span></div>';
   }
   function safetyNote(open) {
     return '<details class="safety"' + (open ? ' open' : '') + '><summary>🛡️ ' + t('safetyTitle') + '</summary><p>' + t('safetyText') + '</p></details>';
@@ -241,7 +254,7 @@
   }
 
   function vMoves(kid) {
-    return header(kid) + '<main class="screen kid" id="main"><h1 tabindex="-1">🏃 ' + t('move') + '</h1>' + safetyNote(false) +
+    return header(kid) + '<main class="screen kid" id="main"><h1 tabindex="-1">🏃 ' + t('move') + '</h1><p class="lead">' + t('movesIntro') + '</p>' + safetyNote(false) +
       '<div class="cards">' + movesOn().map((m) => moveCard(kid, m)).join('') + '</div></main>' + kidNav(kid, 'move');
   }
 
@@ -259,6 +272,7 @@
     return header(kid) + '<main class="screen kid timer-screen" id="main">' +
       '<a class="back-link" href="#/kid/' + kid + '/move">← ' + t('moreMoves') + '</a>' +
       '<h1 tabindex="-1" class="center">' + esc(L(m.name)) + '</h1>' +
+      (moveDoneToday(kid, m.id) ? '' : '<p class="center earn-line">⭐ ' + t('earnLine', { n: earnTxt(m.stars) }) + '</p>') +
       '<div class="timer-wrap"><div class="ring-wrap"><svg class="ring" viewBox="0 0 200 200" aria-hidden="true"><circle cx="100" cy="100" r="' + RING_R + '" class="ring-bg"/>' +
       '<circle cx="100" cy="100" r="' + RING_R + '" class="ring-fg" id="ringfg" stroke-dasharray="' + RING_C.toFixed(1) + '" stroke-dashoffset="' + (RING_C * (1 - frac)).toFixed(1) + '"/></svg>' +
       '<div class="ring-inner"><span class="illus anim-' + m.anim + (tm && tm.running ? ' playing' : '') + '" id="illus" aria-hidden="true">' + m.icon + '</span>' +
@@ -299,9 +313,29 @@
           '<span class="item-title">' + esc(L(r.name)) + '</span>' +
           '<span class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="' + r.cost + '" aria-valuenow="' + Math.min(r.cost, Math.max(0, av)) + '" aria-label="' + esc(L(r.name)) + '"><span class="bar" style="width:' + (pend ? 100 : pct) + '%"></span></span>' +
           '<span class="item-meta"><span>⭐ ' + t('of', { a: Math.min(r.cost, Math.max(0, av)), b: r.cost }) + '</span></span>' + act + '</span></div>';
-      }).join('') + '</div></main>' + kidNav(kid, 'rewards');
+      }).join('') + '</div>' + kidHistory(kid) + '</main>' + kidNav(kid, 'rewards');
   }
 
+  function kidHistory(kid) {
+    const rows = S.log.filter((e) => e.kid === kid && e.stars > 0).sort(byNewest).slice(0, 6);
+    if (!rows.length) return '';
+    return '<section class="card kid-hist"><h2>📜 ' + t('recentStars') + '</h2><ul class="hist">' + rows.map((e) => histRow(e, false)).join('') + '</ul></section>';
+  }
+  const byNewest = (a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : (b.ts || 0) - (a.ts || 0));
+  function histRow(e, showKid) {
+    const isRed = e.type === 'reward';
+    const it = e.type === 'move' ? moveById(e.item) : e.type === 'chore' ? choreById(e.item) : rewardById(e.item);
+    const icon = it ? it.icon : (isRed ? '🎁' : '⭐'); const name = it ? L(it.name) : e.item;
+    const k = kidById(e.kid);
+    const locale = S.lang === 'es' ? 'es-MX' : 'en-US';
+    const d = new Date(e.date + 'T12:00:00').toLocaleDateString(locale, { weekday: 'short', month: 'short', day: 'numeric' });
+    const pts = e.stars ? (isRed ? '−' : '+') + e.stars + ' ⭐' : t('justForFun');
+    const st = e.status === 'pending' ? '<span class="hist-st wait">⏳ ' + t('waiting') + '</span>' : '<span class="hist-st ok">✅ ' + t('statusOk') + '</span>';
+    return '<li class="hist-row hist-' + e.type + '" data-type="' + e.type + '">' + (showKid && k ? avatarSvg(k.avatar, 34) : '') +
+      '<span class="hist-ic" aria-hidden="true">' + esc(icon) + '</span><span class="hist-body"><span class="hist-top">' + kindTag(e.type) + (showKid && k ? ' <span class="hist-kid">' + esc(k.nick) + '</span>' : '') + '</span>' +
+      '<span class="hist-name">' + esc(name) + '</span><span class="hist-meta">' + esc(d) + ' · ' + st + '</span></span>' +
+      '<span class="hist-pts' + (isRed ? ' minus' : '') + (e.status === 'pending' ? ' pend' : '') + '">' + esc(pts) + '</span></li>';
+  }
   function vPin() {
     const locked = Date.now() < ui.lockUntil;
     const dots = [0, 1, 2, 3].map((i) => '<span class="pdot' + (i < ui.pinBuf.length ? ' on' : '') + '"></span>').join('');
@@ -318,11 +352,11 @@
   }
 
   /* ---------- parent dashboard ---------- */
-  const TABS = [['approve', '✅'], ['week', '📊'], ['chores', '🧹'], ['moves', '🏃'], ['rewards', '🎁'], ['kids', '🧒'], ['settings', '⚙️']];
+  const TABS = [['approve', '✅'], ['week', '📊'], ['history', '📜'], ['chores', '🧹'], ['moves', '🏃'], ['rewards', '🎁'], ['kids', '🧒'], ['settings', '⚙️']];
   function vDash() {
     const tab = ui.dashTab; const pc = pendingCount();
-    const tabKey = { approve: 'tabApprove', week: 'tabWeek', chores: 'tabChores', moves: 'tabMoves', rewards: 'tabRewards', kids: 'tabKids', settings: 'tabSettings' };
-    const body = { approve: pApprove, week: pWeek, chores: pChores, moves: pMoves, rewards: pRewards, kids: pKids, settings: pSettings }[tab]();
+    const tabKey = { approve: 'tabApprove', week: 'tabWeek', chores: 'tabChores', moves: 'tabMoves', rewards: 'tabRewards', kids: 'tabKids', settings: 'tabSettings', history: 'tabHistory' };
+    const body = { approve: pApprove, week: pWeek, chores: pChores, moves: pMoves, rewards: pRewards, kids: pKids, settings: pSettings, history: pHistory }[tab]();
     return header() + '<main class="screen parent" id="main"><div class="dash-head"><h1 tabindex="-1">' + t('dashTitle') + '</h1>' +
       '<div class="dash-btns"><a class="btn small ghost" href="#/who">👀 ' + t('toKids') + '</a><button type="button" class="btn small dark" data-act="lock">🔒 ' + t('lock') + '</button></div></div>' +
       '<div class="ptabs" role="tablist" aria-label="' + esc(t('dashTitle')) + '">' + TABS.map(([k, ic]) =>
@@ -337,12 +371,15 @@
     const row = (kid, ic, kind, title, stars, act, id) => {
       const k = kidById(kid);
       return '<div class="card appr"><div class="appr-top">' + (k ? avatarSvg(k.avatar, 44) : '') + '<div class="appr-txt"><span class="appr-kid">' + esc(k ? k.nick : '?') + '</span>' +
-        '<span class="appr-what"><span aria-hidden="true">' + esc(ic) + '</span> <span class="tag ' + (kind === 'chore' ? 'tag-chore' : 'tag-reward') + '">' + t(kind === 'chore' ? 'choreReq' : 'rewardReq') + '</span> ' + esc(title) + '</span></div>' +
-        '<span class="appr-stars">' + (kind === 'chore' ? '+' : '−') + stars + ' ⭐</span></div>' +
-        '<div class="row"><button type="button" class="btn ghost grow" data-act="' + act + '-no" data-id="' + id + '">' + t('notYet') + '</button><button type="button" class="btn ok grow" data-act="' + act + '-yes" data-id="' + id + '">✅ ' + t('approve') + '</button></div></div>';
+        '<span class="appr-what"><span aria-hidden="true">' + esc(ic) + '</span> <span class="tag ' + ({ chore: 'tag-chore', move: 'tag-move' }[kind] || 'tag-reward') + '">' + t({ chore: 'choreReq', move: 'exerciseReq' }[kind] || 'rewardReq') + '</span> ' + esc(title) + '</span></div>' +
+        '<span class="appr-stars">' + (kind === 'reward' ? '−' : '+') + stars + ' ⭐</span></div>' +
+        '<div class="row"><button type="button" class="btn ghost grow" data-kind="' + kind + '" data-act="' + act + '-no" data-id="' + id + '">' + t('notYet') + '</button><button type="button" class="btn ok grow" data-kind="' + kind + '" data-act="' + act + '-yes" data-id="' + id + '">✅ ' + t('approve') + '</button></div></div>';
     };
     return (chores.length + reds.length > 1 ? '<div class="row end"><button type="button" class="btn ok small" data-act="approve-all">✅ ' + t('approveAll') + '</button></div>' : '') +
-      chores.map((e) => { const c = choreById(e.item) || { icon: '🧹', name: { en: e.item } }; return row(e.kid, c.icon, 'chore', L(c.name), e.stars, 'chore', e.id); }).join('') +
+      chores.map((e) => {
+        if (e.type === 'move') { const m = moveById(e.item) || { icon: '🏃', name: { en: e.item }, secs: e.secs }; return row(e.kid, m.icon, 'move', L(m.name) + ' (' + t('secs', { n: e.secs || m.secs }) + ')', e.stars, 'chore', e.id); }
+        const c = choreById(e.item) || { icon: '🧹', name: { en: e.item } }; return row(e.kid, c.icon, 'chore', L(c.name), e.stars, 'chore', e.id);
+      }).join('') +
       reds.map((r) => { const rw = rewardById(r.reward) || { icon: '🎁', name: { en: r.reward } }; return row(r.kid, rw.icon, 'reward', L(rw.name), r.cost, 'red', r.id); }).join('');
   }
   function pWeek() {
@@ -357,6 +394,7 @@
       const moves = wk.filter((e) => e.type === 'move').length;
       const chores = appr.filter((e) => e.type === 'chore').length;
       const mins = Math.round(sum(wk.filter((e) => e.type === 'move'), (e) => e.secs) / 60);
+      const exStars = sum(appr.filter((e) => e.type === 'move'), (e) => e.stars); const chStars = sum(appr.filter((e) => e.type === 'chore'), (e) => e.stars);
       return '<div class="card week">' + '<div class="week-head">' + avatarSvg(k.avatar, 44) + '<h3>' + esc(k.nick) + '</h3><span class="muted">' + t('ageLabel', { a: k.age }) + '</span></div>' +
         '<div class="kpis"><div><b>' + sum(appr, (e) => e.stars) + '</b><span>⭐ ' + t('starsEarned') + '</span></div><div><b>' + moves + '</b><span>🏃 ' + t('movesDone') + '</span></div>' +
         '<div><b>' + chores + '</b><span>🧹 ' + t('choresDone') + '</span></div><div><b>' + mins + '</b><span>⏱️ ' + t('activeMin') + '</span></div></div>' +
@@ -364,8 +402,15 @@
           const lab = d.toLocaleDateString(locale, { weekday: 'short' });
           return '<li aria-label="' + esc(d.toLocaleDateString(locale, { weekday: 'long' }) + ': ' + starTxt(per[i])) + '"><span class="bar-val" aria-hidden="true">' + (per[i] || '') + '</span><span class="bar-col"><span class="bar-fill" style="height:' + Math.round((per[i] / max) * 100) + '%"></span></span><span class="bar-day" aria-hidden="true">' + esc(lab.replace('.', '')) + '</span></li>';
         }).join('') + '</ul>' +
+        '<p class="week-split">🏃 ' + t('fromExercise') + ': <b>' + exStars + ' ⭐</b> · 🧹 ' + t('fromChores') + ': <b>' + chStars + ' ⭐</b></p>' +
         '<p class="week-foot">🔥 ' + t('streakNow') + ': <b>' + (streak(k.id) === 1 ? t('day1') : t('days', { n: streak(k.id) })) + '</b> · 🌟 ' + t('balance') + ': <b>' + balance(k.id) + '</b></p></div>';
     }).join('');
+  }
+  function pHistory() {
+    const reds = S.redemptions.map((r) => ({ kid: r.kid, type: 'reward', item: r.reward, date: dkey(new Date(r.ts)), ts: r.ts, status: r.status, stars: r.cost }));
+    const rows = S.log.concat(reds).sort(byNewest).slice(0, 60);
+    return '<h2>📜 ' + t('historyTitle') + '</h2><p class="muted">' + t('historyIntro') + '</p>' +
+      (rows.length ? '<ul class="hist card" data-testid="history">' + rows.map((e) => histRow(e, true)).join('') + '</ul>' : '<div class="card empty"><p>' + t('historyNone') + '</p></div>');
   }
   function toggle(kind, id, on) {
     return '<label class="switch"><input type="checkbox" data-act="toggle" data-kind="' + kind + '" data-id="' + id + '"' + (on ? ' checked' : '') + '><span class="sw" aria-hidden="true"></span><span class="sr-only">' + t('showKids') + '</span></label>';
@@ -382,7 +427,7 @@
     }
     if (kind === 'move') {
       f += field('f-secs', t('seconds'), it.secs, 'type="number" min="30" max="60" step="5" inputmode="numeric" class="short"');
-      f += field('f-stars', t('stars') + ' (1 - 3)', it.stars, 'type="number" min="1" max="3" inputmode="numeric" class="short"');
+      f += field('f-stars', t('stars') + ' (1 - 5)', it.stars, 'type="number" min="1" max="5" inputmode="numeric" class="short"');
     }
     if (kind === 'reward') f += field('f-cost', t('cost') + ' (1 - 200)', it.cost || 10, 'type="number" min="1" max="200" inputmode="numeric" class="short"');
     f += err('err-edit') + '<div class="row"><button type="button" class="btn ghost" data-act="edit-cancel">' + t('cancel') + '</button>' +
@@ -436,7 +481,7 @@
     }
     return '<div class="celebrate" role="dialog" aria-modal="true" aria-labelledby="celT"><div class="confetti" aria-hidden="true">' + conf + '</div>' +
       '<div class="cel-card"><div class="cel-star" aria-hidden="true">🌟</div><h2 id="celT">' + t('greatJob') + '</h2>' +
-      (c.stars ? '<p class="cel-earn">' + t('youEarned', { n: '' }) + ' <b>+' + c.stars + ' ⭐</b></p>' : '<p class="cel-sub">' + t('funOnly') + '</p>') +
+      (c.stars ? '<p class="cel-earn">' + t('youEarned', { n: '' }) + ' <b>+' + c.stars + ' ⭐</b></p><p class="cel-sub">⏳ ' + t('celWait') + '</p>' : '<p class="cel-sub">' + t('funOnly') + '</p>') +
       '<div class="stack"><button type="button" class="btn primary big" data-act="cel-home">🏠 ' + t('backToday') + '</button>' +
       '<button type="button" class="btn ghost big" data-act="cel-again">🔁 ' + t('again') + '</button></div></div></div>';
   }
@@ -466,7 +511,8 @@
     const tm = ui.timer; const m = moveById(tm.mid);
     const already = moveDoneToday(tm.kid, m.id);
     const stars = already ? 0 : m.stars;
-    addLog(tm.kid, 'move', m.id, dkey(), 'approved', stars, m.secs);
+    // First finish of the day earns stars, which wait for a grown-up just like chores. Extra rounds are just for fun.
+    addLog(tm.kid, 'move', m.id, dkey(), already ? 'approved' : 'pending', stars, m.secs);
     save();
     const kid = tm.kid; const mid = tm.mid;
     stopTimer();
@@ -593,7 +639,7 @@
       case 'key': pressKey(el.dataset.k); break;
       case 'lock': ui.parentOk = false; nav('#/who'); break;
       case 'ptab': ui.dashTab = el.dataset.v; ui.editing = null; render(); { const b = app.querySelector('.ptab.on'); if (b) b.focus(); } break;
-      case 'chore-yes': case 'chore-no': approveLog(el.dataset.id, act === 'chore-yes'); save(); render(); if (act === 'chore-yes') toast('✅ ' + t('approvedToast')); break;
+      case 'chore-yes': case 'chore-no': case 'log-yes': case 'log-no': approveLog(el.dataset.id, /-yes$/.test(act)); save(); render(); if (/-yes$/.test(act)) toast('✅ ' + t('approvedToast')); break;
       case 'red-yes': case 'red-no': approveRed(el.dataset.id, act === 'red-yes'); save(); render(); if (act === 'red-yes') toast('🎁 ' + t('redeemedToast')); break;
       case 'approve-all':
         S.log.filter((e) => e.status === 'pending').forEach((e) => { e.status = 'approved'; });
@@ -675,7 +721,7 @@
       }
       if (kind === 'move') {
         data.secs = num('f-secs', 30, 60); if (data.secs == null) { setErr('err-edit', t('errRange', { a: 30, b: 60 })); return; }
-        data.stars = num('f-stars', 1, 3); if (data.stars == null) { setErr('err-edit', t('errRange', { a: 1, b: 3 })); return; }
+        data.stars = num('f-stars', 1, 5); if (data.stars == null) { setErr('err-edit', t('errRange', { a: 1, b: 5 })); return; }
       }
       if (kind === 'reward') { data.cost = num('f-cost', 1, 200); if (data.cost == null) { setErr('err-edit', t('errRange', { a: 1, b: 200 })); return; } }
       if (it) Object.assign(it, data);

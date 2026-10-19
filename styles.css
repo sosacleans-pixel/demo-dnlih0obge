@@ -301,3 +301,26 @@ a.item:active { transform: translateY(2px); }
 @media (min-width: 600px) {
   .app { box-shadow: 0 0 0 2px var(--line); }
 }
+
+/* Exercise points and star history */
+.item-meta .pts { color: #7A4A00; background: var(--amber-l); border-radius: 999px; padding: 0 8px; }
+.earn-line { margin: 0 0 6px; font-weight: 900; font-size: 18px; color: #7A4A00; }
+.week-split { margin: 10px 0 0; font-size: 15px; }
+.hist { list-style: none; margin: 0; padding: 0; }
+.hist.card { padding: 6px 12px; }
+.kid-hist { margin-top: 16px; }
+.kid-hist h2 { font-size: 20px; margin: 0 0 6px; }
+.hist-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.hist-row:last-child { border-bottom: 0; }
+.hist-row .av { flex: 0 0 auto; }
+.hist-ic { flex: 0 0 auto; font-size: 26px; width: 34px; text-align: center; }
+.hist-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.hist-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.hist-kid { font-weight: 800; font-size: 14px; }
+.hist-name { font-weight: 800; font-size: 16px; line-height: 1.2; }
+.hist-meta { font-size: 13px; color: var(--ink2); }
+.hist-st.wait { color: #6B4200; font-weight: 800; }
+.hist-st.ok { color: var(--green); font-weight: 800; }
+.hist-pts { flex: 0 0 auto; font-weight: 900; font-size: 16px; color: var(--green); white-space: nowrap; }
+.hist-pts.minus { color: var(--red); }
+.hist-pts.pend { color: #6B4200; }

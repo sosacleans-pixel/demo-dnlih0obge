@@ -9,11 +9,11 @@
       name: { en: 'Jumping Jacks', es: 'Saltos de tijera' },
       steps: { en: ['Jump and open arms and legs.', 'Jump back together.'],
                es: ['Salta y abre brazos y piernas.', 'Salta y vuelve a juntarlos.'] } },
-    { id: 'bear', icon: '🐻', anim: 'crawl', secs: 30, stars: 1,
+    { id: 'bear', icon: '🐻', anim: 'crawl', secs: 30, stars: 2,
       name: { en: 'Bear Crawl', es: 'Paso de oso' },
       steps: { en: ['Hands and feet on the floor.', 'Walk slowly like a bear.'],
                es: ['Manos y pies en el piso.', 'Camina despacio como un oso.'] } },
-    { id: 'frog', icon: '🐸', anim: 'jump', secs: 30, stars: 1,
+    { id: 'frog', icon: '🐸', anim: 'jump', secs: 30, stars: 2,
       name: { en: 'Frog Jumps', es: 'Saltos de rana' },
       steps: { en: ['Squat down low.', 'Jump up and land soft.'],
                es: ['Agáchate bien abajo.', 'Salta y cae suave.'] } },
@@ -29,7 +29,7 @@
       name: { en: 'March in Place', es: 'Marcha en tu lugar' },
       steps: { en: ['Lift your knees high.', 'Swing your arms.'],
                es: ['Sube las rodillas.', 'Mueve los brazos.'] } },
-    { id: 'crab', icon: '🦀', anim: 'side', secs: 30, stars: 1,
+    { id: 'crab', icon: '🦀', anim: 'side', secs: 30, stars: 2,
       name: { en: 'Crab Walk', es: 'Paso de cangrejo' },
       steps: { en: ['Sit with hands behind you.', 'Lift your hips and walk.'],
                es: ['Siéntate con las manos atrás.', 'Sube la cadera y camina.'] } },
@@ -61,6 +61,7 @@
   ];
 
   var rewards = [
+    { id: 'allowance', icon: '💵', cost: 10, name: { en: 'Allowance money ($1)', es: 'Mesada ($1)' } },
     { id: 'game', icon: '🎲', cost: 8, name: { en: 'Game with a grown-up', es: 'Juego con un adulto' } },
     { id: 'movie', icon: '🎬', cost: 12, name: { en: 'Family movie night', es: 'Noche de película en familia' } },
     { id: 'dinner', icon: '🍕', cost: 15, name: { en: 'Pick what is for dinner', es: 'Elige la cena' } },
